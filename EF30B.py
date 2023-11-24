@@ -22,10 +22,7 @@ class Segment:
         self.__pin = Pin(gpio, Pin.OUT)
             
     def value(self, value=None):
-        if value == None:            
-            return self.__pin.value()
-        else:
-            self.__pin.value(value)
+        return self.__pin.value(value)
         
     def on(self):
         self.value(True)
@@ -52,14 +49,14 @@ class SegmentController:
                          [1,1,1,0,0,0,0],
                          [1,1,1,1,1,1,1],
                          [1,1,1,0,0,1,1]]
-        
+
+    @staticmethod
+    def create(*gpios):
+        return SegmentController([Segment(gpio) for gpio in gpios])
+
     def update(self, n):
-        if n < 0:
-            for i in range(7):
-                self.__segments[i].value(0)
-        else:
-            for i in range(7):
-                self.__segments[i].value(self.__lookup[n][i])         
+        for i in range(len(self.__segments)):
+            self.__segments[i].value(self.__lookup[n][i])         
 
 class MultipleDigitDisplay:
     def __init__(self, segmentController, *digitSelectors):
@@ -67,6 +64,10 @@ class MultipleDigitDisplay:
         self.__selectors = digitSelectors
         self.__values = [-1]*len(digitSelectors)
         self.__timer = Timer()
+
+    @staticmethod
+    def create(segmentController, *gpios):
+        return MultipleDigitDisplay(segmentController,[DigitSelector(gpio) for gpio in gpios])
             
     def value(self, value):
         values = [-1]*len(self.__selectors) + [int(d) for d in str(value)]
@@ -91,25 +92,11 @@ class MultipleDigitDisplay:
         self.__timer.init(mode=Timer.PERIODIC, freq=100, callback=update)
     
     def off(self):
+        self.__timer.deinit()
         for display in self.__selectors:
             display.enabled(False)
-        self.__timer.deinit()
         
     def clear(self):
         self.off()
                
-    
-DS1 = DigitSelect(2)
-DS2 = DigitSelect(3)
-DS3 = DigitSelect(4)
 
-segments = SegmentController(Segment(13),Segment(14),Segment(15),Segment(16),Segment(17),Segment(18),Segment(19))
-
-disp = MultipleDigitDisplay(segments, DS1, DS2)
-
-disp.on()
-while(True):
-    for i in range(1,50):
-        disp.value(i)
-        time.sleep(0.1)
-disp.off()
