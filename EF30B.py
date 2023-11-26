@@ -55,25 +55,13 @@ class LedGroupMultiplexer:
     def __init__(self, *groups):
         self.__led = Pin(25, Pin.OUT)
         self.__groups = groups
-        self.__running = False
-        self.__timer = Timer()
-        self.__freq = 100
 
-    def __tick(self, timer):
-        try:
+    async def __tick(self):
+        while True:
             for group in self.__groups:
                 group.on()
-                time.sleep(.001)
+                await asyncio.sleep_ms(5)
                 group.off()
-        except:
-            self.stop(timer)
-
-
-    def freq(self, freq=None):
-        if f == None:
-            return self.__freq
-        else:
-            self.__freq = freq
 
     def value(self, n):
         digits = [int(d) for d in str(n)]
@@ -82,26 +70,28 @@ class LedGroupMultiplexer:
             group.value(m)
         return n
 
-    def start(self):
-        self.__timer.init(mode=Timer.PERIODIC, freq=self.__freq, callback=self.__tick)
+    async def start(self):
+        self.__task = asyncio.create_task(self.__tick())
         self.__led.on()
 
-    def stop(self, ignore=None):
-        self.__timer.deinit()
+    def stop(self):
+        self.__task.cancel()        
+        for group in self.__groups:
+            group.enable(False)
         self.__led.off()
 
                
 # test env
+async def main():
+    leds = [Pin(n, Pin.OUT) for n in [13,14,15,16,17,18,19]]
+    msb = SevenSegment(2, *leds)
+    lsb = SevenSegment(3, *leds)
+    panel = SevenSegment(4, *leds)
+    plex = LedGroupMultiplexer(panel,msb,lsb)
 
-leds = [Pin(n, Pin.OUT) for n in [13,14,15,16,17,18,19]]
-msb = SevenSegment(2, *leds)
-lsb = SevenSegment(3, *leds)
-plex = LedGroupMultiplexer(msb,lsb)
-timer = Timer()
-
-plex.start()
-# timer.init(mode=Timer.ONE_SHOT, period=5000, callback=plex.stop)
-for n in range(100):
-    plex.value(n)
-    time.sleep(0.2)
-# plex.stop()
+    asyncio.create_task(plex.start())
+    for n in range(90,110):
+        plex.value(n)
+        await asyncio.sleep_ms(250)
+        
+    plex.stop()
