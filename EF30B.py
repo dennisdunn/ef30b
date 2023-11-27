@@ -1,97 +1,119 @@
 from machine import Pin, Timer
-import time, asyncio
+import asyncio
 
-class LedGroup:
-    def __init__(self, groupGpio, *leds):
+class PinGroup:
+    """Enable or disable a group of pins as a whole."""
+    def __init__(self, groupGpio, *pins):
         self.__pin = Pin(groupGpio, Pin.OPEN_DRAIN, value=1)
-        self.__leds = leds
+        self.__pins = pins
+        self.__value = None
 
-    def enable(self, enabled=None):
+    def getValue(self, value=None):
+        return self.__value
+
+    def setValue(self, value):
+           self.__value = value
+
+    def enable(self, enabled):
         if enabled == None:
             return not self.__pin.value()
         else:
+            if self.__value:
+                for pin, value in zip(self.__pins, self.__value):
+                    pin.value(value)
             self.__pin.value(not enabled)
 
-    def value(self, values=None):
-        if values == None:
-            return [led.value() for led in self.__leds]
-        else:
-            for led, value in zip(self.__leds, values):
-                led.value(value)
+class BasePanel(): 
+    """Provides a way to set the value of a bunch of pin groups."""
+    def __init__(self, *pinGroups):
+        self.__pinGroups = pinGroups
 
-class SevenSegment(LedGroup):
-    def __init__(self, groupGpio, *leds):
-        super().__init__(groupGpio, *leds)
-        self.__value = None
-        self.__lookup = [[1,1,1,1,1,1,0],
-                         [0,1,1,0,0,0,0],
-                         [1,1,0,1,1,0,1],
-                         [1,1,1,1,0,0,1],
-                         [0,1,1,0,0,1,1],
-                         [1,0,1,1,0,1,1],
-                         [0,0,1,1,1,1,1],
-                         [1,1,1,0,0,0,0],
-                         [1,1,1,1,1,1,1],
-                         [1,1,1,0,0,1,1]]
+    def getPinGroups(self):
+        return self.__pinGroups
     
-    def value(self, value=None):
-        if value == None:
-            return  self.__value
-        else:
-            self.__value = value
+    def setValue(self, value):
+        pass
+    
+class SevenSegmentPanel(BasePanel): 
+    """Combines multiple PinGroups digits into one display."""
+    def __init__(self, *pinGroups):
+        super().__init__(*pinGroups)
+        self.__lookup = [[1,1,1,1,1,1,0],
+                        [0,1,1,0,0,0,0],
+                        [1,1,0,1,1,0,1],
+                        [1,1,1,1,0,0,1],
+                        [0,1,1,0,0,1,1],
+                        [1,0,1,1,0,1,1],
+                        [0,0,1,1,1,1,1],
+                        [1,1,1,0,0,0,0],
+                        [1,1,1,1,1,1,1],
+                        [1,1,1,0,0,1,1]]
 
-    def on(self):
-        if self.__value != None:
-            super().value(self.__lookup[self.__value])
-            self.enable(True)
+    def setValue(self, value):
+        digits = [int(d) for d in str(value)]
+        values = [None]*(len(self.__pinGroups) - len(digits)) + digits
+        for digit, idx in zip(self.__pinGroups, values):
+            if idx == None:
+                digit.setValue([0,0,0,0,0,0,0])
+            else:
+                digit.setValue(self.__lookup[idx])
 
-    def off(self):
-        self.enable(False)
+class LedPanel(BasePanel):
+    def __init__(self, groupGpio, *pins):
+        super().__init__(groupGpio, *pins)
+        self.TIMER = False
+        self.HILO = False
+        self.TEMP = False
+        self.FLAME = False
+        self.POWER = False
 
-    def clear(self):
-        self.__value = None
+    def setValue(self, value=None):
+        self.__pinGroups[0].setValue([self.TIMER, self.HILO,self.TEMP,self.FLAME,0,0,self.POWER])
 
-class LedGroupMultiplexer:
-    def __init__(self, *groups):
+class PinGroupMultiplexer:
+    def __init__(self, *pinGroups):
         self.__led = Pin(25, Pin.OUT)
-        self.__groups = groups
+        self.__groups = pinGroups
 
     async def __tick(self):
         while True:
-            for group in self.__groups:
-                group.on()
+            for pinGroup in self.__groups:
+                pinGroup.enable(True)
                 await asyncio.sleep_ms(5)
-                group.off()
+                pinGroup.enable(False)
 
-    def value(self, n):
-        digits = [int(d) for d in str(n)]
-        values = [None]*(len(self.__groups) - len(digits)) + digits
-        for group, m in zip(self.__groups, values):
-            group.value(m)
-        return n
-
-    async def start(self):
+    def start(self):
         self.__task = asyncio.create_task(self.__tick())
         self.__led.on()
 
-    def stop(self):
-        self.__task.cancel()        
+    def stop(self):    
+        self.__task.cancel()   
         for group in self.__groups:
             group.enable(False)
-        self.__led.off()
-
+        self.__led.off() 
                
 # test env
 async def main():
-    leds = [Pin(n, Pin.OUT) for n in [13,14,15,16,17,18,19]]
-    msb = SevenSegment(2, *leds)
-    lsb = SevenSegment(3, *leds)
-    panel = SevenSegment(4, *leds)
-    plex = LedGroupMultiplexer(panel,msb,lsb)
+    pins = [Pin(n, Pin.OUT) for n in [13,14,15,16,17,18,19]]
+    msb = PinGroup(2, *pins)
+    lsb = PinGroup(3, *pins)
+    leds = PinGroup(4, *pins)
 
-    asyncio.create_task(plex.start())
-    for n in range(90,110):
-        plex.value(n)
-        await asyncio.sleep_ms(250)
-        
-    plex.stop()
+    digits = SevenSegmentPanel(msb,lsb)
+    panel = LedPanel(leds)
+    panel.TEMP=True
+    panel.HILO=True
+    panel.TIMER=True
+    panel.FLAME=True
+    panel.POWER=True
+
+    plex = PinGroupMultiplexer(*(panel.getPinGroups()+digits.getPinGroups()))
+
+    try:
+        plex.start()
+        for n in range(100):
+            digits.setValue(n)
+            panel.setValue()
+            await asyncio.sleep_ms(200)
+    finally:  
+        plex.stop()
