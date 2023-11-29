@@ -2,19 +2,14 @@ from machine import Pin
 import asyncio
 
 class PinGroup:
-    """Enable or disable a group of pins as a whole."""
-    def __init__(self, groupGpio, *pins):
+    """Enable or disable a group of pins as a whole.
+    
+    The source of the values for the pins is any object with
+    a value() property."""
+    def __init__(self, groupGpio, source, *pins):
         self._pin = Pin(groupGpio, mode=Pin.OPEN_DRAIN, value=1, pull=Pin.PULL_UP)
         self._pins = pins
-        self._value = []
-
-    @property
-    def value(self):
-        return self._value
-
-    @value.setter
-    def value(self, value):
-        self._value = value
+        self._source = source
 
     @property
     def enabled(self):
@@ -22,26 +17,15 @@ class PinGroup:
     
     @enabled.setter
     def enabled(self, value):
-        for pin, pinValue in zip(self._pins, self._value):
+        for pin, pinValue in zip(self._pins, self._source.value):
             pin.value(pinValue)
         self._pin.value(not value)
 
-class BasePanel(): 
-    """Provides a way to set the value of a bunch of pin groups."""
-    def __init__(self, *pinGroups):
-        self.__pinGroups = pinGroups
-
-    def getPinGroups(self):
-        return self.__pinGroups
-    
-    def setValue(self, value):
-        pass
-    
-class SevenSegmentPanel(BasePanel): 
-    """Combines multiple PinGroups digits into one display."""
-    def __init__(self, *pinGroups):
-        super().__init__(*pinGroups)
-        self.__lookup = [[1,1,1,1,1,1,0],
+   
+class SevenSegment(): 
+    def __init__(self):
+        self._value = None
+        self._lookup = [[1,1,1,1,1,1,0],
                         [0,1,1,0,0,0,0],
                         [1,1,0,1,1,0,1],
                         [1,1,1,1,0,0,1],
@@ -51,46 +35,125 @@ class SevenSegmentPanel(BasePanel):
                         [1,1,1,0,0,0,0],
                         [1,1,1,1,1,1,1],
                         [1,1,1,0,0,1,1]]
+        
+    @property
+    def value(self):
+        if self._value == None:
+            return [0,0,0,0,0,0,0]
+        return self._value
+    
+    @value.setter
+    def value(self, value=None):
+        if value == None:
+            self._value = value
+        else:
+            self._value = self._lookup[value]
 
-    def setValue(self, value):
+    @staticmethod
+    def getDigits(value, size=2):
+        """Get the digits of the value as [MSB...LSB]"""
         digits = [int(d) for d in str(value)]
-        values = [None]*(len(self.__pinGroups) - len(digits)) + digits
-        for digit, idx in zip(self.__pinGroups, values):
-            if idx == None:
-                digit.setValue([0,0,0,0,0,0,0])
-            else:
-                digit.setValue(self.__lookup[idx])
+        return [None]*(size - len(digits)) + digits
 
-class LedPanel(BasePanel):
-    def __init__(self, groupGpio, *pins):
-        super().__init__(groupGpio, *pins)
-        self.TIMER = False
-        self.HILO = False
-        self.TEMP = False
-        self.FLAME = False
-        self.POWER = False
+class LedPanel():
+    def __init__(self):
+        self._green = False # timer 
+        self._yellow = False # hi/lo
+        self._red0 = False # temp
+        self._red1 = False # flame
+        self._blue = False # power
 
-    def setValue(self, value=None):
-        self.__pinGroups[0].setValue([self.TIMER, self.HILO,self.TEMP,self.FLAME,0,0,self.POWER])
+    @property
+    def green(self):
+        return self._green
+    
+    @green.setter
+    def green(self, value):
+        self._green = value
 
-class PinGroupMultiplexer:
+    @property
+    def yellow(self):
+        return self._yellow
+    
+    @yellow.setter
+    def yellow(self, value):
+        self._yellow = value
+
+    @property
+    def red0(self):
+        return self._red0
+    
+    @red0.setter
+    def red0(self, value):
+        self._red0 = value
+
+    @property
+    def red1(self):
+        return self._red1
+    
+    @red1.setter
+    def red1(self, value):
+        self._red1 = value
+
+    @property
+    def blue(self):
+        return self._blue
+    
+    @blue.setter
+    def blue(self, value):
+        self._blue = value
+
+    @property
+    def value(self):
+        return [self._green,self._yellow,self._red0,self._red1,0,0,self._blue]
+
+class Multiplexer:
     def __init__(self, *pinGroups):
-        self.__led = Pin(25, Pin.OUT)
-        self.__groups = pinGroups
+        self._groups = pinGroups
 
-    async def __tick(self):
+    async def _tick(self):
         while True:
-            for pinGroup in self.__groups:
-                pinGroup.enable(True)
-                await asyncio.sleep_ms(5)
-                pinGroup.enable(False)
+            for pinGroup in self._groups:
+                pinGroup.enabled = True
+                await asyncio.sleep(0.005)
+                pinGroup.enabled = False
 
     def start(self):
-        self.__task = asyncio.create_task(self.__tick())
-        self.__led.on()
+        self._task = asyncio.create_task(self._tick())
 
     def stop(self):    
-        self.__task.cancel()   
-        for group in self.__groups:
-            group.enable(False)
-        self.__led.off() 
+        self._task.cancel()   
+        for group in self._groups:
+            group.enabled = False
+
+
+##############################################################################
+
+async def main():
+    pins = [Pin(n, Pin.OUT) for n in [13,14,15,16,17,18,19]]
+
+    msb = SevenSegment()
+    lsb = SevenSegment()
+    led = LedPanel()
+    mux = Multiplexer(PinGroup(2, msb, *pins), PinGroup(3, lsb, *pins), PinGroup(4, led, *pins))
+
+    try:
+        mux.start()
+        for n in range(100):
+            digits = SevenSegment.getDigits(n)
+            msb.value = digits[0]
+            lsb.value = digits[1]
+
+            led.red0=n%2 # even
+            led.red1=not led.red0 # odd
+
+            led.green=n%3 # fizz
+            led.yellow=n%5 # buzz
+            led.blue=led.green and led.yellow # fizzbuzz
+
+            await asyncio.sleep(0.2)
+    finally:  
+        mux.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())

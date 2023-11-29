@@ -1,33 +1,30 @@
 from machine import Pin
 import asyncio
-from EF30B import PinGroup, PinGroupMultiplexer, SevenSegmentPanel,LedPanel
+from EF30B import PinGroup, Multiplexer, SevenSegment, LedPanel
 
-
-# test env
 async def main():
     pins = [Pin(n, Pin.OUT) for n in [13,14,15,16,17,18,19]]
-    msb = PinGroup(2, *pins)
-    lsb = PinGroup(3, *pins)
-    leds = PinGroup(4, *pins)
 
-    digits = SevenSegmentPanel(msb,lsb)
-    panel = LedPanel(leds)
-    panel.TEMP=True
-    panel.HILO=True
-    panel.TIMER=True
-    panel.FLAME=True
-    panel.POWER=True
+    msb = SevenSegment()
+    lsb = SevenSegment()
+    led = LedPanel()
+    mux = Multiplexer(PinGroup(2, msb, *pins), PinGroup(3, lsb, *pins), PinGroup(4, led, *pins))
 
-    plex = PinGroupMultiplexer(*(panel.getPinGroups()+digits.getPinGroups()))
+    led.red0=True
+    led.yellow=True
+    led.green=True
+    led.red1=True
+    led.blue=True
 
     try:
-        plex.start()
+        mux.start()
         for n in range(100):
-            digits.setValue(n)
-            panel.setValue()
-            await asyncio.sleep_ms(200)
+            digits = SevenSegment.getDigits(n)
+            msb.value = digits[0]
+            lsb.value = digits[1]
+            await asyncio.sleep(0.2)
     finally:  
-        plex.stop()
+        mux.stop()
 
 if __name__ == "__main__":
     asyncio.run(main())
