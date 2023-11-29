@@ -4,24 +4,27 @@ import asyncio
 class PinGroup:
     """Enable or disable a group of pins as a whole."""
     def __init__(self, groupGpio, *pins):
-        self.__pin = Pin(groupGpio, Pin.OPEN_DRAIN, value=1)
-        self.__pins = pins
-        self.__value = None
+        self._pin = Pin(groupGpio, mode=Pin.OPEN_DRAIN, value=1, pull=Pin.PULL_UP)
+        self._pins = pins
+        self._value = []
 
-    def getValue(self, value=None):
-        return self.__value
+    @property
+    def value(self):
+        return self._value
 
-    def setValue(self, value):
-           self.__value = value
+    @value.setter
+    def value(self, value):
+        self._value = value
 
-    def enable(self, enabled):
-        if enabled == None:
-            return not self.__pin.value()
-        else:
-            if self.__value:
-                for pin, value in zip(self.__pins, self.__value):
-                    pin.value(value)
-            self.__pin.value(not enabled)
+    @property
+    def enabled(self):
+        return not self._pin.value()
+    
+    @enabled.setter
+    def enabled(self, value):
+        for pin, pinValue in zip(self._pins, self._value):
+            pin.value(pinValue)
+        self._pin.value(not value)
 
 class BasePanel(): 
     """Provides a way to set the value of a bunch of pin groups."""
