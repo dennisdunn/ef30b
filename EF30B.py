@@ -1,5 +1,6 @@
 from machine import Pin
 import asyncio
+import random
 
 class PinGroup:
     """Enable or disable a group of pins as a whole.
@@ -110,24 +111,44 @@ class LedPanel():
 class Multiplexer:
     def __init__(self, *pinGroups):
         self._groups = pinGroups
-
-    async def _tick(self):
+        
+    @property
+    def groups(self):
+        return self._groups
+    
+    async def eventLoop(self):
         while True:
             for pinGroup in self._groups:
                 pinGroup.enabled = True
                 await asyncio.sleep(0.005)
                 pinGroup.enabled = False
 
-    def start(self):
-        self._task = asyncio.create_task(self._tick())
-
-    def stop(self):    
-        self._task.cancel()   
-        for group in self._groups:
-            group.enabled = False
-
-
 ##############################################################################
+
+class demo:
+    def __init__(self,*sources):
+        self._msb = sources[0]
+        self._lsb = sources[1]
+        self._led = sources[2]
+
+    async def eventLoop(self, period=0.1):
+        while True:
+            n = random.randint(0,99)
+
+            [self._msb.value, self._lsb.value] = SevenSegment.getDigits(n)
+
+            self._led.red0=n%2 # odd
+            self._led.red1=not self._led.red0 # even
+
+            self._led.green=not (n%3) # fizz
+            self._led.yellow=not (n%5) # buzz
+            self._led.blue=self._led.green and self._led.yellow # fizzbuzz
+            
+            await asyncio.sleep(period)
+
+def listener():
+    async def eventLoop():
+        pass
 
 async def main():
     pins = [Pin(n, Pin.OUT) for n in [13,14,15,16,17,18,19]]
@@ -135,25 +156,17 @@ async def main():
     msb = SevenSegment()
     lsb = SevenSegment()
     led = LedPanel()
+
     mux = Multiplexer(PinGroup(2, msb, *pins), PinGroup(3, lsb, *pins), PinGroup(4, led, *pins))
+    poc = demo(msb,lsb,led) 
 
-    try:
-        mux.start()
-        for n in range(100):
-            digits = SevenSegment.getDigits(n)
-            msb.value = digits[0]
-            lsb.value = digits[1]
+    asyncio.create_task(mux.eventLoop())
+    asyncio.create_task(poc.eventLoop(0.5))
 
-            led.red0=n%2 # even
-            led.red1=not led.red0 # odd
+    await asyncio.sleep(15)
 
-            led.green=n%3 # fizz
-            led.yellow=n%5 # buzz
-            led.blue=led.green and led.yellow # fizzbuzz
-
-            await asyncio.sleep(0.2)
-    finally:  
-        mux.stop()
+    for group in mux.groups:
+        group.enabled = False
 
 if __name__ == "__main__":
     asyncio.run(main())
