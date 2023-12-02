@@ -4,6 +4,7 @@ import asyncio
 import random
 
 from multiplexer import Mux
+from lut import LookupTable
 
 SEGMENT_TABLE = [[1,1,1,1,1,1,0],
                 [0,1,1,0,0,0,0],
@@ -57,57 +58,36 @@ class AsyncPinSet(PinSet):
         async with self._lock:
             self.value = values
 
-class LookupTable:
-    def __init__(self, table, default):
-        self._table = table
-        self._default = default
-
-    def get(self, value):
-        try:
-            return self._table[value]
-        except:
-            return self._default
-
-class Registers:
+class Register:
     DISPLAY = 0
     GREEN_LED = 1
     YELLOW_LED = 2
     RED0_LED = 3
     RED1_LED = 4
     BLUE_LED = 5
-    MSB = 128
-    LSB = 129
-    LED = 130
     ALL = 255
 
+class Registers:
     def __init__(self):
         self._registers = [0]*6
-        self._display = [255]*2
-
-    def _bitsToInt(self,bitlist):
-        out = 0
-        for bit in bitlist:
-            out = (out << 1) | bit
-        return out
 
     def get(self, regNum):
-        if regNum == Registers.ALL:
+        if regNum == Register.ALL:
             return self._registers
-        elif regNum == Registers.MSB:
-            return self._display[0]
-        elif regNum == Registers.LSB:
-            return self._display[1]
-        elif regNum == Registers.LED:
-            ledBits = [0]*7 # [self._registers[n] for n in range(Registers.GREEN_LED, Registers.BLUE_LED)] + [0]*2 + [self._registers[Registers.BLUE_LED]]
-            return self._bitsToInt(ledBits)
         else:
             return self._registers[regNum]
 
     def set(self, regNum, value):
-        if regNum == Registers.DISPLAY:
-            digits = [int(d) for d in str(value)]
-            self._display = [255]*(len(self._display) - len(digits)) + digits
-        self._registers[regNum] = value
+        if regNum == Register.ALL:
+            self._registers = value
+        else:
+            self._registers[regNum] = value
+
+    def toggle(self, regNum):
+        if regNum < Register.GREEN_LED and regNum > Register.BLUE_LED:
+            pass
+        else:
+            self._registers[regNum] = not self._registers[regNum]
 
 class AsyncRegisters(Registers):
     def __init__(self):
@@ -122,6 +102,10 @@ class AsyncRegisters(Registers):
         async with self._lock:
             super().set(regNum, value)
 
+    async def toggle(self, regNum):
+        async with self._lock:
+            super().toggle(regNum)
+
 class MuxContext:
     def __init__(self, registers, pins):
         self._registers = registers
@@ -134,35 +118,50 @@ class MuxContext:
     @property
     def registers(self):
         return self._registers
+
+class DisplayMux(Mux):
+    def __init__(self, ctx, selects):
+        super().__init__(context=ctx)
+        self._selects = selects
+        self._lut = LookupTable(SEGMENT_TABLE,SEGMENT_TABLE_DEFAULT)
+
+    def _getDigits(self, size, value):
+        digits = [int(d) for d in str(value)]
+        return [None]*(size-len(digits)) + digits
     
-
-
-class ChipSelectMux(Mux):
-    def __init__(self, context, chipSelect, regNum):
-        super().__init__(context)
-        self._chipSelect = chipSelect
-        self._regNum = regNum
-        self._segmentLookup = LookupTable(SEGMENT_TABLE,SEGMENT_TABLE_DEFAULT)
-
+    async def _show(self, selector, value, wait):
+        await self._context.pins.set(value)
+        selector.enabled = True
+        await asyncio.sleep(wait)
+        selector.enabled = False
+    
     async def loop(self, wait):
+        self._wait = wait
         while self.isRunning:
-            ctx = self._context
-            value = await ctx.registers.get(self._regNum) 
-            await ctx.pins.set(self._segmentLookup.get(value))
-            self._chipSelect.enabled = True
-            await asyncio.sleep(wait)
-            self._chipSelect.enabled = False
+            values = await self._context.registers.get(Register.ALL)
+
+            leds = values[1:5]+[0,0]+values[5:]            
+            display =[self._lut.get(n) for n in self._getDigits(2, values[Register.DISPLAY])] + [leds]
+            
+            for selector, value in zip(self._selects, display):
+                await self._show(selector, value, wait)
+
+            await asyncio.sleep(0)
 
 async def main():
     pins = [13,14,15,16,17,18,19]
     context = MuxContext(AsyncRegisters(), AsyncPinSet(*[Pin(n, Pin.OUT) for n in pins]))
     selectors = [ChipSelect(n) for n in [2,3,4]]
-    for selector, reg in zip(selectors, range(Registers.MSB,Registers.LED+1)):
-        mux = ChipSelectMux(context, selector, reg)
-        mux.start(0.005)
+    mux = DisplayMux(context, selectors)
+
+    mux.start(0.005)
+
     while True:
-        await context.registers.set(Registers.DISPLAY, random.randint(0,99) )
-        await asyncio.sleep(1)
+        for n in range(0,99):
+            led = random.randint(1,5)
+            await context.registers.toggle(led)
+            await context.registers.set(Register.DISPLAY, n)
+            await asyncio.sleep(.5)
 
 if __name__ == "__main__":
     try:
