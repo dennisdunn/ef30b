@@ -1,93 +1,173 @@
 from machine import Pin
+import machine
 import asyncio
+import random
 
-class PinGroup:
-    """Enable or disable a group of pins as a whole."""
-    def __init__(self, groupGpio, *pins):
-        self.__pin = Pin(groupGpio, mode=Pin.OPEN_DRAIN, value=1, pull=Pin.PULL_UP)
-        self.__pins = pins
-        self.__value = None
+from multiplexer import Mux
 
-    def getValue(self, value=None):
-        return self.__value
+SEGMENT_TABLE = [[1,1,1,1,1,1,0],
+                [0,1,1,0,0,0,0],
+                [1,1,0,1,1,0,1],
+                [1,1,1,1,0,0,1],
+                [0,1,1,0,0,1,1],
+                [1,0,1,1,0,1,1],
+                [0,0,1,1,1,1,1],
+                [1,1,1,0,0,0,0],
+                [1,1,1,1,1,1,1],
+                [1,1,1,0,0,1,1]]
 
-    def setValue(self, value):
-           self.__value = value
+SEGMENT_TABLE_DEFAULT = [0]*7
 
-    def enable(self, enabled):
-        if enabled == None:
-            return not self.__pin.value()
+class ChipSelect:
+    def __init__(self, groupGpio):
+        self._pin = Pin(groupGpio, mode=Pin.OPEN_DRAIN, value=1, pull=Pin.PULL_UP)
+
+    @property
+    def enabled(self):
+        return not self._pin.value()
+    
+    @enabled.setter
+    def enabled(self, value): 
+        self._pin.value(not value)
+    
+class PinSet(): 
+    """Set/get the values for a bunch of pins at the same time."""
+    def __init__(self, *pins):
+        self._pins = pins
+
+    @property
+    def value(self):
+        return [pin.value() for pin in self._pins]
+    
+    @value.setter
+    def value(self, values):
+        for pin, value in zip(self._pins, values):
+            pin.value(value)
+
+class AsyncPinSet(PinSet):
+    def __init__(self, *pins):
+        super().__init__(*pins)
+        self._lock = asyncio.Lock()
+
+    async def get(self):
+        async with self._lock:
+            return self.value
+        
+    async def set(self, values):
+        async with self._lock:
+            self.value = values
+
+class LookupTable:
+    def __init__(self, table, default):
+        self._table = table
+        self._default = default
+
+    def get(self, value):
+        try:
+            return self._table[value]
+        except:
+            return self._default
+
+class Registers:
+    DISPLAY = 0
+    GREEN_LED = 1
+    YELLOW_LED = 2
+    RED0_LED = 3
+    RED1_LED = 4
+    BLUE_LED = 5
+    MSB = 128
+    LSB = 129
+    LED = 130
+    ALL = 255
+
+    def __init__(self):
+        self._registers = [0]*6
+        self._display = [255]*2
+
+    def _bitsToInt(self,bitlist):
+        out = 0
+        for bit in bitlist:
+            out = (out << 1) | bit
+        return out
+
+    def get(self, regNum):
+        if regNum == Registers.ALL:
+            return self._registers
+        elif regNum == Registers.MSB:
+            return self._display[0]
+        elif regNum == Registers.LSB:
+            return self._display[1]
+        elif regNum == Registers.LED:
+            ledBits = [0]*7 # [self._registers[n] for n in range(Registers.GREEN_LED, Registers.BLUE_LED)] + [0]*2 + [self._registers[Registers.BLUE_LED]]
+            return self._bitsToInt(ledBits)
         else:
-            if self.__value:
-                for pin, value in zip(self.__pins, self.__value):
-                    pin.value(value)
-            self.__pin.value(not enabled)
+            return self._registers[regNum]
 
-class BasePanel(): 
-    """Provides a way to set the value of a bunch of pin groups."""
-    def __init__(self, *pinGroups):
-        self.__pinGroups = pinGroups
+    def set(self, regNum, value):
+        if regNum == Registers.DISPLAY:
+            digits = [int(d) for d in str(value)]
+            self._display = [255]*(len(self._display) - len(digits)) + digits
+        self._registers[regNum] = value
 
-    def getPinGroups(self):
-        return self.__pinGroups
+class AsyncRegisters(Registers):
+    def __init__(self):
+        super().__init__()
+        self._lock = asyncio.Lock()
+
+    async def get(self, regNum):
+        async with self._lock:
+            return super().get(regNum)
+
+    async def set(self, regNum, value):
+        async with self._lock:
+            super().set(regNum, value)
+
+class MuxContext:
+    def __init__(self, registers, pins):
+        self._registers = registers
+        self._pins = pins
+
+    @property
+    def pins(self):
+        return self._pins
     
-    def setValue(self, value):
-        pass
+    @property
+    def registers(self):
+        return self._registers
     
-class SevenSegmentPanel(BasePanel): 
-    """Combines multiple PinGroups digits into one display."""
-    def __init__(self, *pinGroups):
-        super().__init__(*pinGroups)
-        self.__lookup = [[1,1,1,1,1,1,0],
-                        [0,1,1,0,0,0,0],
-                        [1,1,0,1,1,0,1],
-                        [1,1,1,1,0,0,1],
-                        [0,1,1,0,0,1,1],
-                        [1,0,1,1,0,1,1],
-                        [0,0,1,1,1,1,1],
-                        [1,1,1,0,0,0,0],
-                        [1,1,1,1,1,1,1],
-                        [1,1,1,0,0,1,1]]
 
-    def setValue(self, value):
-        digits = [int(d) for d in str(value)]
-        values = [None]*(len(self.__pinGroups) - len(digits)) + digits
-        for digit, idx in zip(self.__pinGroups, values):
-            if idx == None:
-                digit.setValue([0,0,0,0,0,0,0])
-            else:
-                digit.setValue(self.__lookup[idx])
 
-class LedPanel(BasePanel):
-    def __init__(self, groupGpio, *pins):
-        super().__init__(groupGpio, *pins)
-        self.TIMER = False
-        self.HILO = False
-        self.TEMP = False
-        self.FLAME = False
-        self.POWER = False
+class ChipSelectMux(Mux):
+    def __init__(self, context, chipSelect, regNum):
+        super().__init__(context)
+        self._chipSelect = chipSelect
+        self._regNum = regNum
+        self._segmentLookup = LookupTable(SEGMENT_TABLE,SEGMENT_TABLE_DEFAULT)
 
-    def setValue(self, value=None):
-        self.__pinGroups[0].setValue([self.TIMER, self.HILO,self.TEMP,self.FLAME,0,0,self.POWER])
+    async def loop(self, wait):
+        while self.isRunning:
+            ctx = self._context
+            value = await ctx.registers.get(self._regNum) 
+            await ctx.pins.set(self._segmentLookup.get(value))
+            self._chipSelect.enabled = True
+            await asyncio.sleep(wait)
+            self._chipSelect.enabled = False
 
-class PinGroupMultiplexer:
-    def __init__(self, *pinGroups):
-        self.__led = Pin(25, Pin.OUT)
-        self.__groups = pinGroups
+async def main():
+    pins = [13,14,15,16,17,18,19]
+    context = MuxContext(AsyncRegisters(), AsyncPinSet(*[Pin(n, Pin.OUT) for n in pins]))
+    selectors = [ChipSelect(n) for n in [2,3,4]]
+    for selector, reg in zip(selectors, range(Registers.MSB,Registers.LED+1)):
+        mux = ChipSelectMux(context, selector, reg)
+        mux.start(0.005)
+    while True:
+        await context.registers.set(Registers.DISPLAY, random.randint(0,99) )
+        await asyncio.sleep(1)
 
-    async def __tick(self):
-        while True:
-            for pinGroup in self.__groups:
-                pinGroup.enable(True)
-                await asyncio.sleep_ms(5)
-                pinGroup.enable(False)
-
-    def start(self):
-        self.__task = asyncio.create_task(self.__tick())
-        self.__led.on()
-
-    def stop(self):    
-        self.__task.cancel()   
-        for group in self.__groups:
-            group.enable(False)
-        self.__led.off() 
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(e)
+    finally:
+        machine.reset()
