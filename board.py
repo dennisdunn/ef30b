@@ -2,7 +2,7 @@ import machine
 import asyncio
 import random
 from annunciators import Blinker
-from EF30B import AsyncPinSet,AsyncRegisters,ChipSelect,DisplayMux,MuxContext,Registers
+from EF30B import AsyncPinSet,AsyncRegisters,Selector,DisplayMux,MuxContext,Registers
 
 I2C_DEVICE_ADDR = 0x42
 I2C_DEVICE_ID = 0x00
@@ -25,7 +25,7 @@ async def main():
     pins = AsyncPinSet(*[machine.Pin(n) for n in SEGMENT_PINS])
     context = MuxContext(registers, pins)
 
-    selects = [ChipSelect(n) for n in CHIP_PINS]
+    selects = [Selector(n) for n in CHIP_PINS]
     for select,reg in zip(selects, CHIP_REGS):
         mux = DisplayMux(context, select, reg)
         mux.start(DISP_WAIT)
