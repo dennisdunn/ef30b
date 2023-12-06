@@ -93,3 +93,5 @@ Thumbs.db
 
 __pycache__
 
+# KiCad backups
+docs/kicad/ef-30b-disp-backups/
