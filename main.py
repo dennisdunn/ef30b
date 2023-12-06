@@ -1,6 +1,5 @@
 import machine
 import asyncio
-import random
 
 from EF30B import DisplayMux, AsyncRegisters,PinSet,LookupTable,Selector,SEGMENT_TABLE,SEGMENT_TABLE_DEFAULT,Register
 
@@ -16,8 +15,14 @@ async def main():
 
     while True:
         for n in range(0,99):
-            led = random.randint(1,5)
-            await mux.context[DisplayMux.REGISTERS].toggle(led)
+            isOdd = n % 2
+            isFizz = not n % 3
+            isBuzz = not n % 5
+            await mux.context[DisplayMux.REGISTERS].set(Register.RED0_LED, isOdd)
+            await mux.context[DisplayMux.REGISTERS].set(Register.RED1_LED, not isOdd)
+            await mux.context[DisplayMux.REGISTERS].set(Register.GREEN_LED, isFizz)
+            await mux.context[DisplayMux.REGISTERS].set(Register.YELLOW_LED, isBuzz)
+            await mux.context[DisplayMux.REGISTERS].set(Register.BLUE_LED, isFizz and isBuzz)
             await mux.context[DisplayMux.REGISTERS].set(Register.DISPLAY, n)
             await asyncio.sleep(.5)
 
