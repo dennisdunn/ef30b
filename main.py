@@ -8,15 +8,16 @@ ADDR_SELECT_2 = machine.Pin(21,pull=machine.Pin.PULL_UP)
 
 
 async def demo():
-    while True:
-        mux = DisplayMux({
-            DisplayMux.REGISTERS:AsyncRegisters(),
-            DisplayMux.PINS:PinSet.create(13,14,15,16,17,18,19),
-            DisplayMux.SELECTORS:[Selector.create(n) for n in [2,3,4]],
-            DisplayMux.SEGMENT_LUT:LookupTable(SEGMENT_TABLE,SEGMENT_TABLE_DEFAULT)
-        })
+    mux = DisplayMux({
+        DisplayMux.REGISTERS:AsyncRegisters(),
+        DisplayMux.PINS:PinSet.create(13,14,15,16,17,18,19),
+        DisplayMux.SELECTORS:[Selector.create(n) for n in [2,3,4]],
+        DisplayMux.SEGMENT_LUT:LookupTable(SEGMENT_TABLE,SEGMENT_TABLE_DEFAULT)
+    })
 
-        mux.start(1/120)
+    mux.start(1/120)
+    
+    while True:
         for n in range(0,100):
             isOdd = n % 2
             isFizz = not n % 3
