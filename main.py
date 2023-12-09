@@ -6,6 +6,8 @@ from EF30B import DisplayMux, AsyncRegisters,PinSet,LookupTable,Selector,SEGMENT
 ADDR_SELECT_1 = machine.Pin(22,pull=machine.Pin.PULL_UP)
 ADDR_SELECT_2 = machine.Pin(21,pull=machine.Pin.PULL_UP)
 
+ADDR_1 = 0x42
+ADDR_2 = 0x62
 
 async def demo():
     mux = DisplayMux({
@@ -30,16 +32,19 @@ async def demo():
             await mux.context[DisplayMux.REGISTERS].set(Register.DISPLAY, n)
             await asyncio.sleep(.5)
 
-async def main():
+async def main(i2c_addr):
     pass
 
 if __name__ == "__main__":
     try:
         if ADDR_SELECT_1.value() and ADDR_SELECT_2.value():
             asyncio.run(demo())
-        else:
-            asyncio.run(main())
-        pass
+        elif not ADDR_SELECT_1.value():
+            asyncio.run(main(ADDR_1))
+        elif not ADDR_SELECT_1.value():
+            asyncio.run(main(ADDR_2))        
+        else:            
+            raise Exception("Can't determine the I2C address.")
     except Exception as e:
         print(e)
     finally:
