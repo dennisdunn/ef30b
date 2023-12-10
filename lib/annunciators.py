@@ -1,17 +1,17 @@
 import asyncio
 import machine
-from multiplexer import Mux
+from lib.coro import Coro
 
-class Blinker(Mux):
-    def __init__(self, pin):
+class Blinker(Coro):
+    def __init__(self, gpio):
         super().__init__({})
-        self._pin = pin
+        self._pin = machine.Pin(gpio,machine.Pin.OUT)
 
     async def tick(self):
         self._pin.toggle()
 
 async def main():
-    b = Blinker(machine.Pin(25,machine.Pin.OUT))
+    b = Blinker(25)
     b.start(delay=0.2)    
     while True:
         await asyncio.sleep(0)

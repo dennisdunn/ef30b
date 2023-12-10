@@ -1,11 +1,13 @@
 import machine
 import asyncio
 
-class Mux:
+class Coro:
+    """A startable/stoppable coroutine."""
+    
     DELAY = "DELAY"
     RUNNING = "RUNNING"
     
-    def __init__(self, context):
+    def __init__(self, context={}):
         self._context = context
         self._running = False
 
@@ -23,10 +25,10 @@ class Mux:
     async def _loop(self):
         while self.isRunning:
             await self.tick()
-            await asyncio.sleep(self.context[Mux.DELAY])
+            await asyncio.sleep(self.context[Coro.DELAY])
 
     def start(self, delay=0.0):
-        self.context[Mux.DELAY] = delay
+        self.context[Coro.DELAY] = delay
         if not self._running:
             self._running = True
             self._task = asyncio.create_task(self._loop())
@@ -37,7 +39,7 @@ class Mux:
             self._running = False
             self._task.cancel()
 
-class _Demo(Mux):
+class _Demo(Coro):
     async def tick(self):
         print(".",end="")
         n = self.context["n"]
