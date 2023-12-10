@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# ef30b i2c_addr command value
+
+# regset i2c_addr register_num register_value
+regset(){
+	i2cset -y 1 $1 $2
+	i2cset -y 1 $1 $3
+}
+
+# regread i2c_addr register_num
+regread(){
+	i2cset -y 1 $1 $2
+	i2cget -y 1 $1
+}
+
+# led i2c_addr register_num command
+led(){
+	case $3 in
+		'on')
+			regset $1 $2 1
+			;;
+		'off')
+			regset $1 $2 0
+			;;
+	esac
+}
+
+case $2 in
+	'show')
+		regset $1 0 $3
+		;;
+	'read')
+		regread $1 0
+		;;
+	'green')
+		led $1 1 $3
+		;;
+	'yellow')
+		led $1 2 $3
+		;;
+	'red0')
+		led $1 3 $3
+		;;
+	'red1')
+		led $1 4 $3
+		;;
+	'blue')
+		led $1 5 $3
+		;;
+esac
+
